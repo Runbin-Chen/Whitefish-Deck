@@ -37,11 +37,16 @@ namespace Whitefish.Poker
         [SerializeField] float selectedLift = 0.34f;
         [SerializeField] float hoverScale = 1.08f;
 
+        [Header("Highlight")]
+        [Tooltip("Tint applied while this card is a legal capture target.")]
+        [SerializeField] Color highlightTint = new Color(1f, 0.86f, 0.45f);
+
         SpriteRenderer sr;
         BoxCollider2D box;
         CardPose pose;
         bool hovered;
         bool selected;
+        bool highlighted;
         bool faceUp = true;
 
         public Card Card { get; private set; }
@@ -49,6 +54,7 @@ namespace Whitefish.Poker
         public bool FaceUp => faceUp;
         public bool Hovered => hovered;
         public bool Selected => selected;
+        public bool Highlighted => highlighted;
         public CardPose Pose => pose;
         public int SortingOrder => sr != null ? sr.sortingOrder : 0;
 
@@ -124,6 +130,15 @@ namespace Whitefish.Poker
         }
 
         public void ToggleSelected() => SetSelected(!selected);
+
+        /// <summary>Marks this card as a legal capture target for whatever is currently selected.</summary>
+        public void SetHighlighted(bool value)
+        {
+            if (highlighted == value) return;
+
+            highlighted = value;
+            if (sr != null) sr.color = value ? highlightTint : Color.white;
+        }
 
         void LateUpdate()
         {

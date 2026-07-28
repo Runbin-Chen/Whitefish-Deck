@@ -4,10 +4,12 @@ using UnityEngine;
 namespace Whitefish.Poker
 {
     /// <summary>
-    /// Runs a round of 钓红点. Right now that means the opening deal only: the local hand, then the
-    /// face-up table spread, with whatever is left staying in the draw pile.
+    /// Runs a round of 钓红点: the opening deal, then capturing pairs off the table.
     ///
-    /// Other players are not dealt yet, so the pile currently holds their cards too — compare
+    /// Select a hand card and the table cards it can take light up; clicking one moves both to the
+    /// capture pile. Turn order — placing a card when nothing matches, then drawing — is not here yet.
+    ///
+    /// Other players are not dealt either, so the draw pile currently holds their cards too; compare
     /// <see cref="DealSettings.DrawPileCards"/> against the live pile count to see the gap.
     /// </summary>
     public class PokerTable : MonoBehaviour
@@ -18,6 +20,8 @@ namespace Whitefish.Poker
         [SerializeField] DeckZone deckZone;
         [SerializeField] TableZone tableZone;
         [SerializeField] HandZone handZone;
+        [Tooltip("Where captured pairs go — the pile on the left.")]
+        [SerializeField] PileZone capturePile;
 
         [Header("Deal")]
         [SerializeField] DealSettings dealSettings = DealSettings.ForPlayers(2);
@@ -38,12 +42,16 @@ namespace Whitefish.Poker
         public DeckZone DeckZone => deckZone;
         public TableZone TableZone => tableZone;
         public HandZone HandZone => handZone;
+        public PileZone CapturePile => capturePile;
 
         public DealSettings DealSettings => dealSettings;
         public bool IsDealing { get; private set; }
 
         /// <summary>Raised once every card of the opening deal has been handed out.</summary>
         public event System.Action<PokerTable> RoundDealt;
+
+        /// <summary>Raised when a pair is taken, with the hand card first and the table card second.</summary>
+        public event System.Action<Card, Card> Captured;
 
         void OnEnable()
         {
@@ -92,6 +100,7 @@ namespace Whitefish.Poker
 
             tableZone.Clear();
             handZone.Clear();
+            if (capturePile != null) capturePile.Clear();
             deckZone.ResetAndShuffle(useRandomSeed ? (int?)null : shuffleSeed);
 
             // Coroutines need a running player loop, and a zero interval has nothing to wait for.
@@ -179,10 +188,54 @@ namespace Whitefish.Poker
         {
             if (IsDealing) return;
 
-            // Capturing (pair to ten, or match 10/J/Q/K) comes next; for now a hand card can
-            // only be picked up and put back down.
             if (view.Zone == handZone)
+            {
                 handZone.ToggleSelection(view);
+                RefreshCaptureHints();
+            }
+            else if (view.Zone == tableZone)
+            {
+                TryCapture(view);
+            }
+        }
+
+        /// <summary>
+        /// Takes the selected hand card together with a table card, if the two capture.
+        /// Both end up on the capture pile. False when nothing is selected or the pair is illegal.
+        /// </summary>
+        public bool TryCapture(CardView tableCard)
+        {
+            if (capturePile == null || tableCard == null || tableCard.Zone != tableZone) return false;
+
+            var selected = handZone.GetSelected();
+            if (selected.Count != 1) return false;
+
+            CardView handCard = selected[0];
+            if (!CaptureRules.CanCapture(handCard.Card, tableCard.Card)) return false;
+
+            // Hand card first: it is the one that was played.
+            capturePile.Add(handCard);
+            capturePile.Add(tableCard);
+
+            RefreshCaptureHints();
+            Debug.Log($"[PokerTable] 钓走 {CaptureRules.Explain(handCard.Card, tableCard.Card)} " +
+                      $"— 收牌堆 {capturePile.Count} 张", this);
+            Captured?.Invoke(handCard.Card, tableCard.Card);
+            return true;
+        }
+
+        /// <summary>Tints every table card the selected hand card could take.</summary>
+        void RefreshCaptureHints()
+        {
+            var selected = handZone.GetSelected();
+            bool hasPick = selected.Count == 1;
+            Card pick = hasPick ? selected[0].Card : default;
+
+            foreach (CardView card in tableZone.Cards)
+            {
+                if (card == null) continue;
+                card.SetHighlighted(hasPick && CaptureRules.CanCapture(pick, card.Card));
+            }
         }
 
         void OnDeckClicked(DeckZone deck)
@@ -193,10 +246,12 @@ namespace Whitefish.Poker
 
         bool Validate()
         {
-            if (library != null && cardPrefab != null && deckZone != null && tableZone != null && handZone != null)
+            if (library != null && cardPrefab != null && deckZone != null &&
+                tableZone != null && handZone != null && capturePile != null)
                 return true;
 
-            Debug.LogError("[PokerTable] Missing references — assign the library, card prefab and all three zones.", this);
+            Debug.LogError("[PokerTable] Missing references — assign the library, card prefab, " +
+                           "the three zones and the capture pile.", this);
             return false;
         }
     }
