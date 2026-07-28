@@ -576,9 +576,12 @@ MonoBehaviour:
   deckZone: {fileID: 1352043985}
   tableZone: {fileID: 1167015850}
   handZone: {fileID: 2092808563}
-  tableCardCount: 8
-  handCardCount: 5
-  tableCardsFaceUp: 1
+  dealSettings:
+    PlayerCount: 2
+    HandCardsPerPlayer: 10
+    TableCards: 12
+  dealInterval: 0.07
+  dealOnStart: 1
   useRandomSeed: 1
   shuffleSeed: 1
 --- !u!114 &1584282986
@@ -738,7 +741,7 @@ MonoBehaviour:
   maxWidth: 5.4
   arcDepth: 0.18
   maxTilt: 8
-  maxSelected: 5
+  maxSelected: 1
 --- !u!4 &2092808564
 Transform:
   m_ObjectHideFlags: 0
