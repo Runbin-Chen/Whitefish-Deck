@@ -1,0 +1,71 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f1cb8d5196373406eaf7eb20885d53e8, type: 3}
+  m_Name: CardSpriteLibrary
+  m_EditorClassIdentifier: Assembly-CSharp::Whitefish.Poker.CardSpriteLibrary
+  faces:
+  - {fileID: 21300000, guid: 37640bf4e58794e9cb2165415b0ef742, type: 3}
+  - {fileID: 21300000, guid: de57f449e1ebb4929b30183a9873dced, type: 3}
+  - {fileID: 21300000, guid: fbb4bf46cdbde4259a24f6ae374d31c2, type: 3}
+  - {fileID: 21300000, guid: b1461ff7225ad46ddab0ce5990f05f45, type: 3}
+  - {fileID: 21300000, guid: 6bdb712e8c64b4363a83eb9057d4ae32, type: 3}
+  - {fileID: 21300000, guid: 9e1f2de5bd9ff4ad6a99c249355b5b5d, type: 3}
+  - {fileID: 21300000, guid: df627a9f8f5ea4203b2ac53675503e67, type: 3}
+  - {fileID: 21300000, guid: 9450fe81903764909b57cdb12bbd668c, type: 3}
+  - {fileID: 21300000, guid: d33f7383f4b704d038b5e75a86f90a49, type: 3}
+  - {fileID: 21300000, guid: 58ef70aaaab0145ccae5c9e13ce81b51, type: 3}
+  - {fileID: 21300000, guid: 37fa18726fde740efa1ff5592483c488, type: 3}
+  - {fileID: 21300000, guid: 90294d21d49b14aaea4c8d546c04be7a, type: 3}
+  - {fileID: 21300000, guid: a854f6f8afd984db5a307baa3e8273d4, type: 3}
+  - {fileID: 21300000, guid: d9a19c1bf4c7741bfbcfb0031a742de7, type: 3}
+  - {fileID: 21300000, guid: b6004fc895b844e9dbe4944df2e58a69, type: 3}
+  - {fileID: 21300000, guid: 6e41aeae30cfe4f61a2aed98333e5835, type: 3}
+  - {fileID: 21300000, guid: 4370e7a8a6548434797109e3f34c68d7, type: 3}
+  - {fileID: 21300000, guid: c94e9df6768774e6ab119211f7b6afcf, type: 3}
+  - {fileID: 21300000, guid: f063a8264fb0148d9ae251870f3e85e7, type: 3}
+  - {fileID: 21300000, guid: c4f411a15b1034efdb26ec1fc74f651f, type: 3}
+  - {fileID: 21300000, guid: e702b971f537547f08ba56268d837ca5, type: 3}
+  - {fileID: 21300000, guid: 728f9a7cd8e3d46fba5ebe4e826c99f8, type: 3}
+  - {fileID: 21300000, guid: abf27638df7194e298b977736b6745a2, type: 3}
+  - {fileID: 21300000, guid: b870666b743f641e8a712bd4fc6bc10b, type: 3}
+  - {fileID: 21300000, guid: e0e4f41d8df534080ad24402cb137244, type: 3}
+  - {fileID: 21300000, guid: 2048b620d18d34cabad95aeb99a11da1, type: 3}
+  - {fileID: 21300000, guid: c51024c18e6e845238af2a6b8a6ffd18, type: 3}
+  - {fileID: 21300000, guid: d8b474fa2e227416c831decaa4ff5dfc, type: 3}
+  - {fileID: 21300000, guid: 32d70f7a21abb4b05b18158d03bf9143, type: 3}
+  - {fileID: 21300000, guid: bed9f3910c10a47b9a1f963e3c4c62c8, type: 3}
+  - {fileID: 21300000, guid: d3103eedd0c4e4e968b8b67baf3babe5, type: 3}
+  - {fileID: 21300000, guid: 89ac79c6eefa149a7949b0879d5ffe95, type: 3}
+  - {fileID: 21300000, guid: b2a3868d405534d76b49c5183ddc0532, type: 3}
+  - {fileID: 21300000, guid: 3f4939ed26cc34d9f9f48125d9914d8b, type: 3}
+  - {fileID: 21300000, guid: 724509f0def1f4dd8a98a873c453c552, type: 3}
+  - {fileID: 21300000, guid: b4a517432e7bd4137ae2764865956200, type: 3}
+  - {fileID: 21300000, guid: e8d403b6230b54fd69b107f5986b7cc9, type: 3}
+  - {fileID: 21300000, guid: 7fb5b73659d7844e2a5b79d5f07dee09, type: 3}
+  - {fileID: 21300000, guid: 770925a2f84dc483e8876679e2f6e26b, type: 3}
+  - {fileID: 21300000, guid: a421bc5ce47fc40ab8b584d5abbb7a9b, type: 3}
+  - {fileID: 21300000, guid: 2b83f2ba9650f4465b1930eebc080dd1, type: 3}
+  - {fileID: 21300000, guid: f1c81a7979cec4ee39b1da0281bdf0a0, type: 3}
+  - {fileID: 21300000, guid: 87095ced7446a4098bade82a861c5eb6, type: 3}
+  - {fileID: 21300000, guid: d0862a2fab23245828d1f96d1524fa1f, type: 3}
+  - {fileID: 21300000, guid: d72279cc367644a48a7e7761cd16b37d, type: 3}
+  - {fileID: 21300000, guid: 9da132aa7cae34833867988ee7921e2f, type: 3}
+  - {fileID: 21300000, guid: d9b5f394b0dd848609d2fa5b54375262, type: 3}
+  - {fileID: 21300000, guid: 4dde3f3dd1ab74ddb8f75b1501dee93d, type: 3}
+  - {fileID: 21300000, guid: 4b2ac88615b3b4fd383edea09b8fb5d8, type: 3}
+  - {fileID: 21300000, guid: d01976e2a06c448459a3d67c42368f72, type: 3}
+  - {fileID: 21300000, guid: 79d9739df4dc6492381d94e2747ce814, type: 3}
+  - {fileID: 21300000, guid: cf27170d86cb34ec48edac34e7f969a7, type: 3}
+  back: {fileID: 21300000, guid: e3458bcce1c814d279bd18b67dec0a4b, type: 3}
+  jokerRed: {fileID: 21300000, guid: ff263f65b6f054682a6254a4073a7330, type: 3}
+  jokerBlack: {fileID: 21300000, guid: 33452e820cc9040b687b9b797c352fc7, type: 3}
+  sourceFolder: Assets/Asset/kenney_playing-cards-pack/PNG/Cards (large)
