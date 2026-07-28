@@ -7,12 +7,16 @@ namespace Whitefish.Poker
     /// a per-slot nudge and tilt so the spread reads as tossed down rather than filed away.
     /// The jitter is derived from the slot index, so a card does not twitch when a neighbour leaves.
     /// </summary>
-    public class TableZone : CardZone
+    public class TableZone : CardZone, ICardPointerTarget
     {
         [Header("Area (local space)")]
-        [SerializeField] Vector2 areaSize = new Vector2(6.6f, 2.3f);
+        [SerializeField] Vector2 areaSize = new Vector2(6.6f, 2.4f);
         [Tooltip("Cards wrap to a new row past this many columns.")]
-        [SerializeField] int maxColumns = 6;
+        [SerializeField] int maxColumns = 8;
+
+        [Header("Placing")]
+        [Tooltip("Collider covering the area. Clicking bare felt inside it plays the selected card.")]
+        [SerializeField] BoxCollider2D dropArea;
 
         [Header("Scatter")]
         [SerializeField] float positionJitter = 0.12f;
@@ -64,6 +68,34 @@ namespace Whitefish.Poker
                 return (h & 0xFFFFFF) / (float)0xFFFFFF * 2f - 1f;
             }
         }
+
+        /// <summary>Raised when the pointer clicks bare felt rather than a card.</summary>
+        public event System.Action<TableZone> EmptyAreaClicked;
+
+        void Awake() => SyncDropArea();
+
+        protected override void OnValidate()
+        {
+            base.OnValidate();
+            SyncDropArea();
+        }
+
+        void SyncDropArea()
+        {
+            if (dropArea == null) dropArea = GetComponent<BoxCollider2D>();
+            if (dropArea == null) return;
+
+            dropArea.size = areaSize;
+            dropArea.offset = Vector2.zero;
+            dropArea.isTrigger = true;
+        }
+
+        // Sits one below the cards it holds, so a click only reaches the felt when it misses
+        // every card sitting on it.
+        int ICardPointerTarget.PointerSortingOrder => baseSortingOrder - 1;
+        void ICardPointerTarget.OnPointerEnter() { }
+        void ICardPointerTarget.OnPointerExit() { }
+        void ICardPointerTarget.OnPointerClick() => EmptyAreaClicked?.Invoke(this);
 
         void OnDrawGizmosSelected()
         {
