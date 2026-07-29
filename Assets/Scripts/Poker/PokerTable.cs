@@ -14,7 +14,7 @@ namespace Whitefish.Poker
     }
 
     /// <summary>
-    /// Runs a round of 钓红点.
+    /// Runs a round of 钓白鱼.
     ///
     /// Every turn is the same three beats: play one hand card — capturing with it if anything on
     /// the table pairs, otherwise laying it down — then draw one from the pile, which likewise

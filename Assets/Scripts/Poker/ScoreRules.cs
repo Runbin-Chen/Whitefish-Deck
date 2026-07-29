@@ -3,7 +3,7 @@ using System.Collections.Generic;
 namespace Whitefish.Poker
 {
     /// <summary>
-    /// 钓红点 scoring, kept as pure logic so it can be checked without a scene.
+    /// 钓白鱼 scoring, kept as pure logic so it can be checked without a scene.
     ///
     /// Only red cards count — hearts and diamonds. Black cards are worth nothing however many
     /// you take. A is 20, 2 through 8 score their face value, and 9, 10, J, Q, K are 10 each.
