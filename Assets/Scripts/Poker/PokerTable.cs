@@ -57,9 +57,13 @@ namespace Whitefish.Poker
         [SerializeField] bool dealOnStart = true;
 
         [Header("Opponents")]
-        [Tooltip("Pause before a non-local seat acts, so its move can be followed.")]
+        [Tooltip("Pause before a non-local seat decides, so you can read the board first.")]
         [Min(0f)]
-        [SerializeField] float opponentDelay = 0.6f;
+        [SerializeField] float opponentThinkTime = 0.9f;
+
+        [Tooltip("Pause after it acts, so the cards finish moving before anything else happens.")]
+        [Min(0f)]
+        [SerializeField] float opponentSettleTime = 0.45f;
 
         [Header("Shuffle")]
         [SerializeField] bool useRandomSeed = true;
@@ -417,16 +421,22 @@ namespace Whitefish.Poker
                 opponentRoutine = StartCoroutine(OpponentResolveDraw(seat));
         }
 
-        void ResolveDrawAgainst(CardView target)
+        /// <summary>Takes the drawn card with a table card, without ending the turn.</summary>
+        bool ResolveDrawCapture(CardView target)
         {
             CardView drawn = DrawnCard;
             PlayerSeat seat = CurrentSeat;
-            if (drawn == null || target == null || seat == null) return;
-            if (!CaptureRules.CanCapture(drawn.Card, target.Card)) return;
+            if (drawn == null || target == null || seat == null) return false;
+            if (!CaptureRules.CanCapture(drawn.Card, target.Card)) return false;
 
             drawn.SetSelected(false);
             Capture(seat, drawn, target);
-            NextSeat();
+            return true;
+        }
+
+        void ResolveDrawAgainst(CardView target)
+        {
+            if (ResolveDrawCapture(target)) NextSeat();
         }
 
         void LeaveDrawnOnTable()
@@ -454,10 +464,9 @@ namespace Whitefish.Poker
 
         IEnumerator OpponentPlay(PlayerSeat seat)
         {
-            yield return new WaitForSeconds(opponentDelay);
-            opponentRoutine = null;
+            yield return new WaitForSeconds(opponentThinkTime);
 
-            if (Phase != TurnPhase.Play || CurrentSeat != seat) yield break;
+            if (Phase != TurnPhase.Play || CurrentSeat != seat) { opponentRoutine = null; yield break; }
 
             CardView best = null, bestTarget = null;
             int bestValue = int.MinValue;
@@ -493,18 +502,22 @@ namespace Whitefish.Poker
                 if (cheapest != null) PlaceOnTable(cheapest);
             }
 
+            // Let the played card finish travelling before the next one appears.
+            yield return new WaitForSeconds(opponentSettleTime);
+
+            opponentRoutine = null; // BeginDraw queues the next routine into this slot
             BeginDraw();
         }
 
         IEnumerator OpponentResolveDraw(PlayerSeat seat)
         {
-            yield return new WaitForSeconds(opponentDelay);
-            opponentRoutine = null;
+            // Long enough to read the card that just came off the pile.
+            yield return new WaitForSeconds(opponentThinkTime);
 
-            if (Phase != TurnPhase.ResolveDraw || CurrentSeat != seat) yield break;
+            if (Phase != TurnPhase.ResolveDraw || CurrentSeat != seat) { opponentRoutine = null; yield break; }
 
             CardView drawn = DrawnCard;
-            if (drawn == null) { NextSeat(); yield break; }
+            if (drawn == null) { opponentRoutine = null; NextSeat(); yield break; }
 
             CardView best = null;
             int bestValue = int.MinValue;
@@ -515,8 +528,13 @@ namespace Whitefish.Poker
                 if (value > bestValue) { bestValue = value; best = t; }
             }
 
-            if (best != null) ResolveDrawAgainst(best);
-            else { LeaveDrawnOnTable(); NextSeat(); }
+            if (best != null) ResolveDrawCapture(best);
+            else LeaveDrawnOnTable();
+
+            yield return new WaitForSeconds(opponentSettleTime);
+
+            opponentRoutine = null;
+            NextSeat();
         }
 
         void StopRoutines()
