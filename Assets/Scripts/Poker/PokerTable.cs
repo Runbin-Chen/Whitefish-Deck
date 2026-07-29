@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace Whitefish.Poker
@@ -7,7 +8,7 @@ namespace Whitefish.Poker
     public enum TurnPhase
     {
         Idle,        // dealing, or between rounds
-        Play,        // waiting for the player to capture with, or put down, a hand card
+        Play,        // waiting for the seat to capture with, or put down, a hand card
         ResolveDraw, // a card has been drawn and is waiting to be resolved
         Finished,    // the round is over
     }
@@ -15,31 +16,30 @@ namespace Whitefish.Poker
     /// <summary>
     /// Runs a round of 钓红点.
     ///
-    /// Capturing never costs you the turn: keep taking pairs off the table for as long as anything
-    /// in hand pairs. Only when nothing pairs do you lay a card down — and *that* is what triggers
-    /// the draw, which in turn either captures or stays on the table.
+    /// Every turn is the same three beats: play one hand card — capturing with it if anything on
+    /// the table pairs, otherwise laying it down — then draw one from the pile, which likewise
+    /// either captures or stays on the table, then pass to the next seat.
     ///
-    /// (The table game passes to the next player after a single capture. Until seats exist, one
-    /// player keeps going until they run dry, which is the same sequence with the hand-off removed.)
+    /// That one-card-per-turn shape is what makes the deal counts work: each turn spends exactly
+    /// one hand card and one pile card, so 2P 10/10/20 has hands and pile running out together.
     ///
     /// Two things are deliberate. Capturing is *mandatory*: laying a card down is only offered when
     /// nothing in hand can take anything, so a card can never be thrown away while a capture is on
-    /// offer. And nothing resolves itself — the drawn card waits in <see cref="drawSlot"/> until the
-    /// player clicks a target or the continue button, even when only one capture is legal.
-    ///
-    /// Only one seat is dealt so far, so the pile still holds the other players' cards and the
-    /// hand empties first — that is what ends the round for now.
+    /// offer. And for a human seat nothing resolves itself — the drawn card waits in
+    /// <see cref="drawSlot"/> until they click a target or the continue button, even when only one
+    /// capture is legal. Seats that are not <see cref="PlayerSeat.IsLocal"/> play themselves.
     /// </summary>
     public class PokerTable : MonoBehaviour
     {
-        [Header("References")]
+        [Header("Seats")]
+        [Tooltip("Turn order. The table deals to each in turn and passes play around them.")]
+        [SerializeField] List<PlayerSeat> seats = new List<PlayerSeat>();
+
+        [Header("Shared zones")]
         [SerializeField] CardSpriteLibrary library;
         [SerializeField] CardView cardPrefab;
         [SerializeField] DeckZone deckZone;
         [SerializeField] TableZone tableZone;
-        [SerializeField] HandZone handZone;
-        [Tooltip("Where captured pairs go — the pile on the left.")]
-        [SerializeField] PileZone capturePile;
         [Tooltip("Holds the freshly drawn card, above the deck, until it is resolved.")]
         [SerializeField] SlotZone drawSlot;
         [Tooltip("Above the drawn card: appears when that card cannot capture anything.")]
@@ -56,17 +56,35 @@ namespace Whitefish.Poker
 
         [SerializeField] bool dealOnStart = true;
 
+        [Header("Opponents")]
+        [Tooltip("Pause before a non-local seat decides, so you can read the board first.")]
+        [Min(0f)]
+        [SerializeField] float opponentThinkTime = 0.9f;
+
+        [Tooltip("Pause after it acts, so the cards finish moving before anything else happens.")]
+        [Min(0f)]
+        [SerializeField] float opponentSettleTime = 0.45f;
+
         [Header("Shuffle")]
         [SerializeField] bool useRandomSeed = true;
         [Tooltip("Used when the random seed is off, so a deal can be reproduced while debugging.")]
         [SerializeField] int shuffleSeed = 1;
 
         Coroutine dealRoutine;
+        Coroutine opponentRoutine;
+        int seatIndex;
+
+        public IReadOnlyList<PlayerSeat> Seats => seats;
+        public PlayerSeat CurrentSeat => seats != null && seatIndex >= 0 && seatIndex < seats.Count
+            ? seats[seatIndex]
+            : null;
+
+        /// <summary>The hand being played this turn.</summary>
+        public HandZone ActiveHand => CurrentSeat != null ? CurrentSeat.Hand : null;
+        public PileZone ActivePile => CurrentSeat != null ? CurrentSeat.CapturePile : null;
 
         public DeckZone DeckZone => deckZone;
         public TableZone TableZone => tableZone;
-        public HandZone HandZone => handZone;
-        public PileZone CapturePile => capturePile;
         public SlotZone DrawSlot => drawSlot;
         public TableButton ContinueButton => continueButton;
         public TableButton PlaceButton => placeButton;
@@ -79,9 +97,9 @@ namespace Whitefish.Poker
         public CardView DrawnCard => drawSlot != null ? drawSlot.Top : null;
 
         public event System.Action<PokerTable> RoundDealt;
-        /// <summary>A pair was taken: the played card first, the table card it took second.</summary>
-        public event System.Action<Card, Card> Captured;
-        public event System.Action<PokerTable> TurnEnded;
+        /// <summary>A pair was taken: the seat, the played card, then the table card it took.</summary>
+        public event System.Action<PlayerSeat, Card, Card> Captured;
+        public event System.Action<PlayerSeat> TurnStarted;
         public event System.Action<PokerTable> RoundFinished;
 
         void OnEnable()
@@ -108,16 +126,15 @@ namespace Whitefish.Poker
         [ContextMenu("New Round")]
         public void NewRound() => NewRound(dealSettings);
 
-        /// <summary>
-        /// Deals a round with an explicit split. This is the hook for game modes, difficulty
-        /// settings and tests — the player count is carried over from the current settings.
-        /// </summary>
         public void NewRound(int handCards, int tableCards) =>
-            NewRound(new DealSettings(dealSettings.PlayerCount, handCards, tableCards));
+            NewRound(new DealSettings(seats.Count, handCards, tableCards));
 
         public void NewRound(DealSettings settings)
         {
             if (!Validate()) return;
+
+            // The seat list is the truth about how many players there are.
+            settings.PlayerCount = seats.Count;
 
             if (!settings.IsValid)
             {
@@ -127,21 +144,19 @@ namespace Whitefish.Poker
 
             dealSettings = settings;
             Phase = TurnPhase.Idle;
+            seatIndex = 0;
 
-            if (dealRoutine != null)
-            {
-                StopCoroutine(dealRoutine);
-                dealRoutine = null;
-            }
-
+            StopRoutines();
             HideButtons();
             drawSlot.Clear();
             tableZone.Clear();
-            handZone.Clear();
-            capturePile.Clear();
+            foreach (PlayerSeat seat in seats)
+            {
+                seat.Hand.Clear();
+                seat.CapturePile.Clear();
+            }
             deckZone.ResetAndShuffle(useRandomSeed ? (int?)null : shuffleSeed);
 
-            // Coroutines need a running player loop, and a zero interval has nothing to wait for.
             if (Application.isPlaying && dealInterval > 0f)
                 dealRoutine = StartCoroutine(DealRoutine(settings));
             else
@@ -162,11 +177,14 @@ namespace Whitefish.Poker
             IsDealing = true;
             var beat = new WaitForSeconds(dealInterval);
 
-            // Rule order: hand first, then the table spread, then the rest stays face down.
+            // Rule order: hands first, one card at a time around the table, then the spread.
             for (int i = 0; i < settings.HandCardsPerPlayer; i++)
             {
-                if (!DealOne(handZone, faceUp: true)) break;
-                yield return beat;
+                foreach (PlayerSeat seat in seats)
+                {
+                    if (!DealOne(seat.Hand, seat.HandIsVisible)) break;
+                    yield return beat;
+                }
             }
 
             for (int i = 0; i < settings.TableCards; i++)
@@ -183,7 +201,8 @@ namespace Whitefish.Poker
         void DealImmediate(DealSettings settings)
         {
             for (int i = 0; i < settings.HandCardsPerPlayer; i++)
-                if (!DealOne(handZone, faceUp: true)) break;
+                foreach (PlayerSeat seat in seats)
+                    DealOne(seat.Hand, seat.HandIsVisible);
 
             for (int i = 0; i < settings.TableCards; i++)
                 if (!DealOne(tableZone, faceUp: true)) break;
@@ -202,12 +221,13 @@ namespace Whitefish.Poker
 
         void FinishDeal(DealSettings settings)
         {
-            Debug.Log($"[PokerTable] {settings} | dealt hand {handZone.Count}, table {tableZone.Count}, " +
-                      $"pile {deckZone.Count} (other players not dealt yet)", this);
+            var hands = new System.Text.StringBuilder();
+            foreach (PlayerSeat seat in seats) hands.Append($"{seat.DisplayName} {seat.Hand.Count}  ");
 
-            Phase = TurnPhase.Play;
-            Refresh();
+            Debug.Log($"[PokerTable] {settings} | {hands}台面 {tableZone.Count},牌堆 {deckZone.Count}", this);
+
             RoundDealt?.Invoke(this);
+            BeginTurn();
         }
 
         CardView SpawnCard(Card card, bool faceUp)
@@ -221,29 +241,78 @@ namespace Whitefish.Poker
             return view;
         }
 
-        // ---------------------------------------------------------------- the turn
+        // ---------------------------------------------------------------- turns
+
+        void BeginTurn()
+        {
+            PlayerSeat seat = CurrentSeat;
+            if (seat == null) return;
+
+            Phase = TurnPhase.Play;
+            Refresh();
+            TurnStarted?.Invoke(seat);
+
+            if (!seat.IsLocal)
+                opponentRoutine = StartCoroutine(OpponentPlay(seat));
+        }
+
+        /// <summary>Rule ④: play passes on once the drawn card has been dealt with.</summary>
+        void NextSeat()
+        {
+            HideButtons();
+            ClearCaptureHints();
+            if (ActiveHand != null) ActiveHand.ClearSelection();
+
+            if (RoundIsOver()) return;
+
+            // Seats are listed in turn order; the table runs anticlockwise around them.
+            seatIndex = (seatIndex + 1) % seats.Count;
+            BeginTurn();
+        }
+
+        bool RoundIsOver()
+        {
+            foreach (PlayerSeat seat in seats)
+                if (seat.Hand.Count > 0) return false;
+
+            Phase = TurnPhase.Finished;
+            StopRoutines();
+            HideButtons();
+
+            var summary = new System.Text.StringBuilder();
+            foreach (PlayerSeat seat in seats)
+                summary.Append($"{seat.DisplayName} {seat.Score}分({seat.RedCards}红)  ");
+
+            Debug.Log($"[PokerTable] 本局结束 — {summary}| 牌堆剩 {deckZone.Count},台面 {tableZone.Count}", this);
+            RoundFinished?.Invoke(this);
+            return true;
+        }
+
+        // ---------------------------------------------------------------- player input
 
         void OnCardClicked(CardView view)
         {
             if (IsDealing || view == null) return;
 
+            PlayerSeat seat = CurrentSeat;
+            if (seat == null || !seat.IsLocal) return; // an opponent is thinking
+
             switch (Phase)
             {
                 case TurnPhase.Play:
-                    if (view.Zone == handZone)
+                    if (view.Zone == seat.Hand)
                     {
-                        handZone.ToggleSelection(view);
+                        seat.Hand.ToggleSelection(view);
                         Refresh();
                     }
                     else if (view.Zone == tableZone && TryCapture(view))
                     {
-                        // Capturing does not cost the turn — keep taking while anything pairs.
-                        ContinuePlay();
+                        // The draw closes every turn, whether the card was taken or laid down.
+                        BeginDraw();
                     }
                     break;
 
                 case TurnPhase.ResolveDraw:
-                    // Only the drawn card acts now; the hand is out of play until it is resolved.
                     if (view.Zone == tableZone)
                         ResolveDrawAgainst(view);
                     break;
@@ -252,171 +321,227 @@ namespace Whitefish.Poker
 
         /// <summary>
         /// Bare felt only clears the selection. It deliberately does *not* play the card: the drop
-        /// area covers the gaps between table cards, so a click that just misses a card used to
-        /// throw the turn away with no confirmation.
+        /// area covers the gaps between table cards, so a click that just misses a card would
+        /// otherwise throw the turn away with no confirmation.
         /// </summary>
         void OnTableEmptyClicked(TableZone zone)
         {
             if (IsDealing || Phase != TurnPhase.Play) return;
+            if (CurrentSeat == null || !CurrentSeat.IsLocal) return;
 
-            handZone.ClearSelection();
+            CurrentSeat.Hand.ClearSelection();
             Refresh();
         }
 
-        /// <summary>
-        /// Takes the selected hand card together with a table card, if the two capture.
-        /// Both end up on the capture pile. False when nothing is selected or the pair is illegal.
-        /// </summary>
-        public bool TryCapture(CardView tableCard)
-        {
-            if (tableCard == null || tableCard.Zone != tableZone) return false;
-
-            var selected = handZone.GetSelected();
-            if (selected.Count != 1) return false;
-
-            CardView handCard = selected[0];
-            if (!CaptureRules.CanCapture(handCard.Card, tableCard.Card)) return false;
-
-            Capture(handCard, tableCard);
-            return true;
-        }
-
-        /// <summary>Rule ②: lay a hand card face up on the table.</summary>
-        public bool PlaceOnTable(CardView handCard)
-        {
-            if (handCard == null || handCard.Zone != handZone) return false;
-
-            handCard.SetSelected(false);
-            handCard.SetFaceUp(true);
-            tableZone.Add(handCard);
-            Debug.Log($"[PokerTable] 打出 {handCard.Card} 到台面", this);
-            return true;
-        }
-
-        /// <summary>The player confirmed laying the selected card down. Only offered when nothing
-        /// in hand could capture, so this can never throw away a legal take.</summary>
         void OnPlaceClicked(TableButton button)
         {
-            if (Phase != TurnPhase.Play || HandHasAnyCapture()) return;
+            if (Phase != TurnPhase.Play || CurrentSeat == null || !CurrentSeat.IsLocal) return;
+            if (HandHasAnyCapture(CurrentSeat.Hand)) return;
 
-            var selected = handZone.GetSelected();
+            var selected = CurrentSeat.Hand.GetSelected();
             if (selected.Count != 1) return;
 
             PlaceOnTable(selected[0]);
             BeginDraw();
         }
 
+        void OnContinueClicked(TableButton button)
+        {
+            if (Phase != TurnPhase.ResolveDraw) return;
+            if (CurrentSeat == null || !CurrentSeat.IsLocal) return;
+
+            LeaveDrawnOnTable();
+            NextSeat();
+        }
+
+        // ---------------------------------------------------------------- moves
+
         /// <summary>
-        /// Rule ③: draw one card. It waits in the slot above the pile — never resolving itself,
-        /// even when only one capture is legal.
+        /// Takes the selected hand card together with a table card, if the two capture.
+        /// Both end up on the seat's capture pile.
         /// </summary>
+        public bool TryCapture(CardView tableCard)
+        {
+            PlayerSeat seat = CurrentSeat;
+            if (seat == null || tableCard == null || tableCard.Zone != tableZone) return false;
+
+            var selected = seat.Hand.GetSelected();
+            if (selected.Count != 1) return false;
+
+            CardView handCard = selected[0];
+            if (!CaptureRules.CanCapture(handCard.Card, tableCard.Card)) return false;
+
+            Capture(seat, handCard, tableCard);
+            return true;
+        }
+
+        /// <summary>Rule ②: lay a hand card face up on the table.</summary>
+        public bool PlaceOnTable(CardView handCard)
+        {
+            PlayerSeat seat = CurrentSeat;
+            if (seat == null || handCard == null || handCard.Zone != seat.Hand) return false;
+
+            handCard.SetSelected(false);
+            handCard.SetFaceUp(true);
+            tableZone.Add(handCard);
+            Debug.Log($"[PokerTable] {seat.DisplayName} 打出 {handCard.Card} 到台面", this);
+            return true;
+        }
+
+        /// <summary>Rule ③: draw one card. It waits in the slot above the pile.</summary>
         void BeginDraw()
         {
-            handZone.ClearSelection();
+            PlayerSeat seat = CurrentSeat;
+            if (seat != null) seat.Hand.ClearSelection();
             HideButtons();
             ClearCaptureHints();
 
             if (deckZone.IsEmpty)
             {
                 Debug.Log("[PokerTable] 牌堆已空,跳过摸牌", this);
-                EndTurn();
+                NextSeat();
                 return;
             }
 
             deckZone.TryDraw(out Card card);
             CardView drawn = SpawnCard(card, faceUp: true);
             drawSlot.Add(drawn);
+            drawn.SetSelected(true); // lifted, so it is obvious the game is waiting on this card
 
-            // Lift it so it is obvious the game is waiting on this card, not on the hand.
-            drawn.SetSelected(true);
             Phase = TurnPhase.ResolveDraw;
 
             int targets = CountTargets(card);
             Debug.Log(targets > 0
-                ? $"[PokerTable] 摸到 {card},{targets} 个可钓目标,请点选"
-                : $"[PokerTable] 摸到 {card},无法钓 — 请点「继续」", this);
+                ? $"[PokerTable] {seat.DisplayName} 摸到 {card},{targets} 个可钓目标"
+                : $"[PokerTable] {seat.DisplayName} 摸到 {card},无法钓", this);
 
             Refresh();
+
+            if (seat != null && !seat.IsLocal)
+                opponentRoutine = StartCoroutine(OpponentResolveDraw(seat));
+        }
+
+        /// <summary>Takes the drawn card with a table card, without ending the turn.</summary>
+        bool ResolveDrawCapture(CardView target)
+        {
+            CardView drawn = DrawnCard;
+            PlayerSeat seat = CurrentSeat;
+            if (drawn == null || target == null || seat == null) return false;
+            if (!CaptureRules.CanCapture(drawn.Card, target.Card)) return false;
+
+            drawn.SetSelected(false);
+            Capture(seat, drawn, target);
+            return true;
         }
 
         void ResolveDrawAgainst(CardView target)
         {
+            if (ResolveDrawCapture(target)) NextSeat();
+        }
+
+        void LeaveDrawnOnTable()
+        {
             CardView drawn = DrawnCard;
-            if (drawn == null || target == null) return;
-            if (!CaptureRules.CanCapture(drawn.Card, target.Card)) return;
+            if (drawn == null) return;
 
             drawn.SetSelected(false);
-            Capture(drawn, target);
-            EndTurn();
+            tableZone.Add(drawn);
+            Debug.Log($"[PokerTable] {drawn.Card} 留在台面", this);
         }
 
-        /// <summary>
-        /// Stay in the play phase after a capture, or close the round out if that was the last
-        /// card in hand.
-        /// </summary>
-        void ContinuePlay()
+        void Capture(PlayerSeat seat, CardView played, CardView tableCard)
         {
-            handZone.ClearSelection();
-            ClearCaptureHints();
+            seat.CapturePile.Add(played);
+            seat.CapturePile.Add(tableCard);
 
-            if (RoundIsOver()) return;
-
-            Phase = TurnPhase.Play;
-            Refresh();
+            Debug.Log($"[PokerTable] {seat.DisplayName} 钓走 " +
+                      $"{CaptureRules.Explain(played.Card, tableCard.Card)} — " +
+                      $"收牌堆 {seat.CapturePile.Count} 张,{seat.Score} 分", this);
+            Captured?.Invoke(seat, played.Card, tableCard.Card);
         }
 
-        bool RoundIsOver()
+        // ---------------------------------------------------------------- opponents
+
+        IEnumerator OpponentPlay(PlayerSeat seat)
         {
-            // The rules end the round when hands and the draw pile are both spent. With one seat
-            // dealt they do not empty together, so the empty hand is what stops play.
-            if (handZone.Count > 0) return false;
+            yield return new WaitForSeconds(opponentThinkTime);
 
-            Phase = TurnPhase.Finished;
-            HideButtons();
-            Debug.Log($"[PokerTable] 本局结束 — 收牌堆 {capturePile.Count} 张," +
-                      $"牌堆剩 {deckZone.Count},台面 {tableZone.Count}", this);
-            RoundFinished?.Invoke(this);
-            return true;
-        }
+            if (Phase != TurnPhase.Play || CurrentSeat != seat) { opponentRoutine = null; yield break; }
 
-        /// <summary>The drawn card could not capture; the player has acknowledged it.</summary>
-        void OnContinueClicked(TableButton button)
-        {
-            if (Phase != TurnPhase.ResolveDraw) return;
+            CardView best = null, bestTarget = null;
+            int bestValue = int.MinValue;
 
-            CardView drawn = DrawnCard;
-            if (drawn != null)
+            // Prefer the take that scores most; red cards are the only ones worth anything.
+            foreach (CardView h in seat.Hand.Cards)
             {
-                drawn.SetSelected(false);
-                tableZone.Add(drawn);
-                Debug.Log($"[PokerTable] {drawn.Card} 留在台面", this);
+                foreach (CardView t in tableZone.Cards)
+                {
+                    if (!CaptureRules.CanCapture(h.Card, t.Card)) continue;
+
+                    int value = ScoreRules.Value(h.Card) + ScoreRules.Value(t.Card);
+                    if (value > bestValue) { bestValue = value; best = h; bestTarget = t; }
+                }
             }
 
-            EndTurn();
+            if (best != null)
+            {
+                seat.Hand.ClearSelection();
+                seat.Hand.ToggleSelection(best);
+                TryCapture(bestTarget);
+            }
+            else
+            {
+                // Nothing pairs: give away the least valuable card.
+                CardView cheapest = null;
+                int cheapestValue = int.MaxValue;
+                foreach (CardView h in seat.Hand.Cards)
+                {
+                    int value = ScoreRules.Value(h.Card);
+                    if (value < cheapestValue) { cheapestValue = value; cheapest = h; }
+                }
+                if (cheapest != null) PlaceOnTable(cheapest);
+            }
+
+            // Let the played card finish travelling before the next one appears.
+            yield return new WaitForSeconds(opponentSettleTime);
+
+            opponentRoutine = null; // BeginDraw queues the next routine into this slot
+            BeginDraw();
         }
 
-        void Capture(CardView played, CardView tableCard)
+        IEnumerator OpponentResolveDraw(PlayerSeat seat)
         {
-            capturePile.Add(played);
-            capturePile.Add(tableCard);
+            // Long enough to read the card that just came off the pile.
+            yield return new WaitForSeconds(opponentThinkTime);
 
-            Debug.Log($"[PokerTable] 钓走 {CaptureRules.Explain(played.Card, tableCard.Card)} " +
-                      $"— 收牌堆 {capturePile.Count} 张", this);
-            Captured?.Invoke(played.Card, tableCard.Card);
+            if (Phase != TurnPhase.ResolveDraw || CurrentSeat != seat) { opponentRoutine = null; yield break; }
+
+            CardView drawn = DrawnCard;
+            if (drawn == null) { opponentRoutine = null; NextSeat(); yield break; }
+
+            CardView best = null;
+            int bestValue = int.MinValue;
+            foreach (CardView t in tableZone.Cards)
+            {
+                if (!CaptureRules.CanCapture(drawn.Card, t.Card)) continue;
+                int value = ScoreRules.Value(t.Card);
+                if (value > bestValue) { bestValue = value; best = t; }
+            }
+
+            if (best != null) ResolveDrawCapture(best);
+            else LeaveDrawnOnTable();
+
+            yield return new WaitForSeconds(opponentSettleTime);
+
+            opponentRoutine = null;
+            NextSeat();
         }
 
-        /// <summary>The drawn card has been dealt with, so the turn proper is over.</summary>
-        void EndTurn()
+        void StopRoutines()
         {
-            handZone.ClearSelection();
-            HideButtons();
-            ClearCaptureHints();
-
-            if (RoundIsOver()) return;
-
-            Phase = TurnPhase.Play;
-            Refresh();
-            TurnEnded?.Invoke(this);
+            if (dealRoutine != null) { StopCoroutine(dealRoutine); dealRoutine = null; }
+            if (opponentRoutine != null) { StopCoroutine(opponentRoutine); opponentRoutine = null; }
+            IsDealing = false;
         }
 
         // ---------------------------------------------------------------- hints and buttons
@@ -429,14 +554,12 @@ namespace Whitefish.Poker
             return count;
         }
 
-        /// <summary>Rule ①: if anything in hand can take something, a capture is compulsory.</summary>
-        public bool HandHasAnyCapture()
+        /// <summary>Rule ①: if anything in this hand can take something, a capture is compulsory.</summary>
+        public bool HandHasAnyCapture(HandZone hand)
         {
-            foreach (CardView h in handZone.Cards)
-            {
-                if (h == null) continue;
-                if (CountTargets(h.Card) > 0) return true;
-            }
+            if (hand == null) return false;
+            foreach (CardView h in hand.Cards)
+                if (h != null && CountTargets(h.Card) > 0) return true;
             return false;
         }
 
@@ -446,15 +569,15 @@ namespace Whitefish.Poker
             RefreshButtons();
         }
 
-        /// <summary>Tints every table card the current card could take.</summary>
         void RefreshCaptureHints()
         {
+            PlayerSeat seat = CurrentSeat;
             bool hasProbe = false;
             Card probe = default;
 
-            if (Phase == TurnPhase.Play)
+            if (Phase == TurnPhase.Play && seat != null && seat.IsLocal)
             {
-                var selected = handZone.GetSelected();
+                var selected = seat.Hand.GetSelected();
                 if (selected.Count == 1) { probe = selected[0].Card; hasProbe = true; }
             }
             else if (Phase == TurnPhase.ResolveDraw && DrawnCard != null)
@@ -472,11 +595,19 @@ namespace Whitefish.Poker
 
         void RefreshButtons()
         {
+            PlayerSeat seat = CurrentSeat;
+
+            // Buttons are the human's controls; opponents act on their own.
+            if (seat == null || !seat.IsLocal)
+            {
+                HideButtons();
+                return;
+            }
+
             if (Phase == TurnPhase.Play)
             {
                 continueButton.Show(false);
-                // Laying a card down is only legal — and only offered — when nothing can be taken.
-                placeButton.Show(!HandHasAnyCapture() && handZone.GetSelected().Count == 1);
+                placeButton.Show(!HandHasAnyCapture(seat.Hand) && seat.Hand.GetSelected().Count == 1);
             }
             else if (Phase == TurnPhase.ResolveDraw)
             {
@@ -491,8 +622,8 @@ namespace Whitefish.Poker
 
         void HideButtons()
         {
-            continueButton.Show(false);
-            placeButton.Show(false);
+            if (continueButton != null) continueButton.Show(false);
+            if (placeButton != null) placeButton.Show(false);
         }
 
         void ClearCaptureHints()
@@ -503,13 +634,18 @@ namespace Whitefish.Poker
 
         bool Validate()
         {
-            if (library != null && cardPrefab != null && deckZone != null && tableZone != null &&
-                handZone != null && capturePile != null && drawSlot != null &&
-                continueButton != null && placeButton != null)
+            bool seatsOk = seats != null && seats.Count > 0;
+            if (seatsOk)
+                foreach (PlayerSeat seat in seats)
+                    if (seat == null || !seat.IsValid) { seatsOk = false; break; }
+
+            if (seatsOk && library != null && cardPrefab != null && deckZone != null &&
+                tableZone != null && drawSlot != null && continueButton != null && placeButton != null)
                 return true;
 
-            Debug.LogError("[PokerTable] Missing references — assign the library, card prefab, " +
-                           "the zones, the capture pile, the draw slot and both buttons.", this);
+            Debug.LogError("[PokerTable] Missing references — every seat needs a hand and a capture " +
+                           "pile, and the table needs the library, card prefab, deck, table zone, " +
+                           "draw slot and both buttons.", this);
             return false;
         }
     }
