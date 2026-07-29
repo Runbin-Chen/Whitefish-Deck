@@ -96,6 +96,8 @@ namespace Whitefish.Poker
         /// <summary>The card waiting in the draw slot, if any.</summary>
         public CardView DrawnCard => drawSlot != null ? drawSlot.Top : null;
 
+        /// <summary>Fired the moment a round begins, before any card is dealt.</summary>
+        public event System.Action<PokerTable> RoundStarted;
         public event System.Action<PokerTable> RoundDealt;
         /// <summary>A pair was taken: the seat, the played card, then the table card it took.</summary>
         public event System.Action<PlayerSeat, Card, Card> Captured;
@@ -145,6 +147,10 @@ namespace Whitefish.Poker
             dealSettings = settings;
             Phase = TurnPhase.Idle;
             seatIndex = 0;
+
+            // Announce the round before dealing, so anything still on screen from the last one
+            // (the results board) clears out rather than hanging over the deal.
+            RoundStarted?.Invoke(this);
 
             StopRoutines();
             HideButtons();

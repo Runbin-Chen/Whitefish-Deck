@@ -39,7 +39,7 @@ namespace Whitefish.Poker
             if (table != null)
             {
                 table.RoundFinished += OnRoundFinished;
-                table.RoundDealt += OnRoundDealt;
+                table.RoundStarted += OnRoundStarted;
             }
             if (newRoundButton != null) newRoundButton.Clicked += OnNewRoundClicked;
         }
@@ -49,16 +49,21 @@ namespace Whitefish.Poker
             if (table != null)
             {
                 table.RoundFinished -= OnRoundFinished;
-                table.RoundDealt -= OnRoundDealt;
+                table.RoundStarted -= OnRoundStarted;
             }
             if (newRoundButton != null) newRoundButton.Clicked -= OnNewRoundClicked;
         }
 
         void OnRoundFinished(PokerTable finished) => Show();
-        void OnRoundDealt(PokerTable dealt) => SetVisible(false);
+
+        /// <summary>
+        /// Clear on round *start*, not on the deal finishing — otherwise a round begun in code
+        /// rather than through the button leaves this board hanging over the whole deal.
+        /// </summary>
+        void OnRoundStarted(PokerTable started) => SetVisible(false);
+
         void OnNewRoundClicked(TableButton button)
         {
-            SetVisible(false);
             if (table != null) table.NewRound();
         }
 
