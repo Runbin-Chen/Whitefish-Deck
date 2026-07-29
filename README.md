@@ -1,4 +1,4 @@
-# 钓红点 · Whitefish-Deck
+# 钓白鱼 · Whitefish-Deck
 
 一副扑克牌就能玩的童年游戏,用 Unity 6 做成像素风的双人对局。
 

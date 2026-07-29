@@ -1,7 +1,7 @@
 namespace Whitefish.Poker
 {
     /// <summary>
-    /// 钓红点 capture rules, kept as pure logic so they can be checked without a scene.
+    /// 钓白鱼 capture rules, kept as pure logic so they can be checked without a scene.
     ///
     /// Two cards are taken together when they either pair to ten — A counts as 1, giving
     /// A-9, 2-8, 3-7, 4-6, 5-5 — or when both are the same rank among 10, J, Q, K.
