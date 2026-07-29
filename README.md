@@ -4,6 +4,10 @@
 
 **凑十钓牌,只算红点。** 谁收走的红桃与方片分数高,谁就赢。
 
+### ▶ [在浏览器里试玩](https://runbin-chen.github.io/Whitefish-Deck/)
+
+无需安装。首次加载约 12 MB,请稍候。
+
 <!-- 早期的整段对局演示,暂留备用:
 ![对局演示](docs/gameplay.gif)
 -->
@@ -86,6 +90,18 @@ A 配 9    2 配 8    3 配 7    4 配 6    5 配 5
 用 **Unity 6000.5.5f1** 或更高版本打开工程,加载 `Assets/Scenes/PokerTable.unity`,按 Play。
 
 对家由 AI 接管:优先钓分数最高的组合,钓不动时打出手上最不值钱的牌。
+
+### 网页版
+
+线上版本部署在 `gh-pages` 分支(孤儿分支,与 `main` 无共同历史,构建产物不进源码历史)。
+
+自己构建时有一处**必须**改,否则在 GitHub Pages 上会白屏:
+
+> Player Settings → WebGL → Publishing Settings → **Decompression Fallback 打开**
+>
+> Brotli 压缩的产物需要服务器发 `Content-Encoding: br`,浏览器才知道要解压。GitHub Pages 不支持自定义响应头,加载器会拿到无法解析的数据。打开回退后 Unity 会在 loader 里内嵌 JS 解压器,自行解压,不依赖服务器声明 —— 产物后缀也会从 `.br` 变成 `.unityweb`。
+
+该设置已随本仓库提交,克隆下来直接构建即可。
 
 ---
 
